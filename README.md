@@ -1,6 +1,6 @@
 # keycloak-mail-load-tester
 
-# Keycloak + Postgres + MailHog
+# Keycloak + Postgres + MailHog + Grafana + Prometheus 
 
 Setup Keycloak avec Postgres et MailHog pour tester l’envoi de mails en masse.
 
@@ -45,6 +45,10 @@ Variables principales : `KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_P
 | `make load-test-ramp` | Test de charge (ramp, un compte) |
 | `make load-test-multi` | Test de charge multi-comptes (création users puis test) |
 | `make load-test-multi-ramp` | Idem en mode ramp |
+| `make create-superadmin SUPERADMIN_USER=... SUPERADMIN_PASSWORD=...` | Créer un utilisateur superadmin |
+| `make list-users` | Nombre d'utilisateurs par realm |
+| `make delete-test-users` | Supprimer les users de test (loadtest_* et testuser_*) uniquement |
+| `make delete-test-users DRY_RUN=1` | Idem en simulation (sans supprimer) |
 | `make clean` | Arrêter les conteneurs et supprimer les volumes |
 
 ---
@@ -155,7 +159,7 @@ Options : `--concurrent`, `--duration` (mode constant) ; `--mode ramp`, `--users
 1. **Realm master** → **Clients** → **admin-cli** → onglet **Paramètres** (Settings) : activer **« Direct access grants »** (Accès direct aux subventions / Direct access grants enabled), puis **Enregistrer**.
 2. **Realm master** → **Sécurité** (ou **Security defenses**) → **Protection contre la force brute** : en dev/test, tu peux désactiver temporairement ou augmenter le seuil, sinon Keycloak peut bloquer après beaucoup de requêtes.
 
-→ **Détail pas à pas** : [docs/admin-keycloak.md](docs/admin-keycloak.md).
+→ **Détail pas à pas** : [docs/admin-keycloak.md](docs/admin-keycloak.md). **Superadmin, nombre d’users par realm, suppression des users de test** : [docs/admin-utils.md](docs/admin-utils.md) (`make create-superadmin`, `make list-users`, `make delete-test-users`).
 
 **Résultats affichés** : requêtes totales, taux de succès, débit (req/s), latence (min, avg, p50, p95, p99), répartition des erreurs.
 
