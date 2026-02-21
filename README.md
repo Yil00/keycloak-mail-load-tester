@@ -6,15 +6,19 @@ Setup Keycloak avec Postgres et MailHog pour tester l’envoi de mails en masse.
 
 ---
 
+→ Notes de release : [docs/Release.md](docs/Release.md)
+
+---
+
 ## Configuration (.env)
 
-Les variables (ports, mots de passe, URL Keycloak) sont lues depuis **`.env`** par `docker compose` et par `test_keycloak.py` (si `python-dotenv` est installé).
+Les variables (ports, mots de passe, URL Keycloak) sont lues depuis **`.env`** par `docker compose` et par les scripts dans `src/` (si `python-dotenv` est installé).
 
 - **`env.dist`** : modèle avec toutes les variables. Copier vers `.env` et adapter :  
   `cp env.dist .env`
 - **`.env`** : valeurs réelles (à ne pas committer si elles contiennent des secrets). Déjà fourni avec des valeurs par défaut pour le dev local.
 
-Variables principales : `KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_PASSWORD`, `POSTGRES_*`, `KEYCLOAK_PORT`, `POSTGRES_PORT`, `MAILHOG_*`. Optionnel pour le script : `NB_USERS`, `MAX_WORKERS`, `BATCH_SIZE`.
+Variables principales : `KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_PASSWORD`, `POSTGRES_*`, `KEYCLOAK_PORT`, `KEYCLOAK_MANAGEMENT_PORT`, `POSTGRES_PORT`, `MAILHOG_*`, `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`. Optionnel pour le script : `NB_USERS`, `MAX_WORKERS`, `BATCH_SIZE`.
 
 ---
 
@@ -23,7 +27,7 @@ Variables principales : `KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_P
 | Commande | Description |
 |----------|-------------|
 | `make help` | Afficher la liste des cibles |
-| `make up` | Démarrer tous les services (Postgres, Keycloak, MailHog) |
+| `make up` | Démarrer tous les services (Postgres, Keycloak, MailHog, Prometheus, Grafana) |
 | `make down` | Arrêter les conteneurs |
 | `make restart` | Redémarrer tous les services |
 | `make ps` | Afficher l’état des conteneurs |
@@ -35,6 +39,8 @@ Variables principales : `KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_P
 | `make test-nb NB=500` | Lancer le test avec un nombre personnalisé |
 | `make test-rate RATE=100 NB=1000` | Test avec débit constant (ex. 100 mails/s) |
 | `make test-batch NB=5000 PAUSE=30` | Test par lots + pause (ex. 5k mails puis 30 s) |
+| `make load-test CONCURRENT=20 DURATION=60` | Test de charge (mode constant) |
+| `make load-test-ramp` | Test de charge (ramp : montée/descente progressive) |
 | `make clean` | Arrêter les conteneurs et supprimer les volumes |
 
 ---
@@ -48,6 +54,12 @@ make up
 # Attendre ~30–40 s que Keycloak démarre
 make logs-keycloak   # surveiller le démarrage
 ```
+
+**Si la page Keycloak affiche « HTTPS required »** : exécuter une fois (après que Keycloak soit démarré) :
+```bash
+make keycloak-allow-http
+```
+Cela met le realm master en « Require SSL = None » en base puis redémarre Keycloak. Ensuite recharger http://localhost:8080.
 
 ### 2. Configurer le SMTP dans Keycloak
 
@@ -96,23 +108,82 @@ Exemples :
 
 ```bash
 # Débit max, 500 mails, garder les users
-.venv/bin/python test_keycloak.py --nb 500 --skip-cleanup
+.venv/bin/python src/test_keycloak.py --nb 500 --skip-cleanup
 
 # Lots de 5k mails puis 30 s de pause (20k mails au total)
-.venv/bin/python test_keycloak.py --nb 20000 --strategy batch-pause --send-batch-size 5000 --pause 30
+.venv/bin/python src/test_keycloak.py --nb 20000 --strategy batch-pause --send-batch-size 5000 --pause 30
 
 # Débit constant 100 mails/s (durée estimée affichée)
-.venv/bin/python test_keycloak.py --nb 10000 --strategy rate --rate 100
+.venv/bin/python src/test_keycloak.py --nb 10000 --strategy rate --rate 100
 ```
 
-### 4. Surveiller
+### 4. Test de charge (connexions simultanées)
+
+Le script **`src/keycloak_load_test.py`** mesure la charge sur le endpoint d’authentification (obtention de token) : N connexions simultanées pendant D secondes.
+
+```bash
+make load-test
+make load-test CONCURRENT=20 DURATION=60
+```
+
+**Mode ramp** (montée/descente progressive) : `make load-test-ramp` ou `make load-test-ramp RAMP_USERS=50 RAMP_UP=120 RAMP_HOLD=60 RAMP_DOWN=90`.
+
+En direct :
+
+```bash
+.venv/bin/python src/keycloak_load_test.py --concurrent 20 --duration 60
+.venv/bin/python src/keycloak_load_test.py --mode ramp --users 30 --ramp-up 60 --hold 30 --ramp-down 60
+```
+
+Options : `--concurrent`, `--duration` (mode constant) ; `--mode ramp`, `--users`, `--ramp-up`, `--hold`, `--ramp-down` (mode ramp) ; `--url`, `--realm`, `--user`, `--password`, `--timeout`, `--warmup`. Les variables `KEYCLOAK_*` du `.env` sont utilisées par défaut.
+
+**En cas de HTTP 403 (tous les logins refusés)** : le test utilise le client `admin-cli` et le grant « password ». Dans Keycloak :
+1. **Realm master** → **Clients** → **admin-cli** → onglet **Paramètres** (Settings) : activer **« Direct access grants »** (Accès direct aux subventions / Direct access grants enabled), puis **Enregistrer**.
+2. **Realm master** → **Sécurité** (ou **Security defenses**) → **Protection contre la force brute** : en dev/test, tu peux désactiver temporairement ou augmenter le seuil, sinon Keycloak peut bloquer après beaucoup de requêtes.
+
+→ **Détail pas à pas** : [docs/admin-keycloak.md](docs/admin-keycloak.md).
+
+**Résultats affichés** : requêtes totales, taux de succès, débit (req/s), latence (min, avg, p50, p95, p99), répartition des erreurs.
+
+**Interprétation des résultats**
+
+| Métrique | Signification |
+|----------|----------------|
+| **Requêtes totales** | Nombre de logins (obtentions de token) effectués pendant le test. |
+| **Succès (%)** | Part des requêtes ayant retourné un token (HTTP 200). 100 % = Keycloak tient la charge. |
+| **Débit (req/s)** | Requêtes par seconde — capacité de traitement du endpoint token. Plus c’est élevé, plus Keycloak absorbe de connexions. |
+| **Latence min / avg** | Temps de réponse minimum et moyen. Une moyenne basse (< 0,1 s en local) indique un bon temps de réponse. |
+| **p50 / p95 / p99** | 50 %, 95 % et 99 % des requêtes ont répondu en moins que cette valeur. p99 élevée = quelques requêtes lentes sous charge. |
+| **Erreurs** | Si présentes : type (timeout, HTTP 401/5xx, etc.) pour diagnostiquer saturation ou rejets. |
+
+**Exemple de sortie** (10 threads, 30 s, Keycloak local) :
+
+```
+  📊 Résultats
+----------------------------------------
+     Requêtes totales : 10784
+     Succès           : 10784 (100.0%)
+     Durée réelle     : 30.0 s
+     Débit (req/s)    : 359.3
+     Latence (s)      : min=0.022  avg=0.028  p50=0.027  p95=0.035  p99=0.041
+```
+
+→ **En bref** : ~360 logins/s soutenus, 100 % de succès, latence moyenne 28 ms. Keycloak tient bien la charge pour cette configuration ; en préprod, comparer ces ordres de grandeur après avoir augmenté `CONCURRENT` et `DURATION` pour estimer la marge.
+
+### 5. Surveiller et monitoring (Grafana)
+
+Keycloak expose des **métriques** (débit, latence, requêtes actives) sur le port **9000**. **Prometheus** les scrape et **Grafana** les affiche en temps réel.
 
 | Outil | URL ou commande |
 |-------|------------------|
+| **Grafana** (graphiques) | http://localhost:3000 (admin / admin) |
+| **Prometheus** | http://localhost:9090 |
 | **MailHog** (mails) | http://localhost:8025 |
 | **Keycloak** | http://localhost:8080 (admin / admin) |
 | **Logs Keycloak** | `make logs-keycloak` |
 | **Nombre d’utilisateurs en BDD** | `docker exec -it keycloak_postgres psql -U keycloak -c "SELECT count(*) FROM user_entity;"` |
+
+**Dashboard Grafana** : menu **Keycloak** → **Keycloak — Vue d'ensemble** (débit req/s, latence moyenne, requêtes actives, 2xx/4xx/5xx). Lancer `make load-test` tout en regardant Grafana pour voir la charge en direct. Variables optionnelles : `GRAFANA_PORT`, `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`, `PROMETHEUS_PORT`, `KEYCLOAK_MANAGEMENT_PORT`.
 
 Conseil : commencer avec `make test` (100 mails) pour valider la config, puis par exemple `make test-nb NB=10000`.
 
@@ -136,13 +207,13 @@ Le même script peut servir en préprod : **création d’utilisateurs → envoi
 3. **Lancer le test** (par ex. 100 mails) :
 
    ```bash
-   .venv/bin/python test_keycloak.py --nb 100
+   .venv/bin/python src/test_keycloak.py --nb 100
    ```
 
    Ou en surchargeant uniquement l’URL et le realm :
 
    ```bash
-   .venv/bin/python test_keycloak.py --url https://auth-preprod.votredomaine.com --realm master --nb 100
+   .venv/bin/python src/test_keycloak.py --url https://auth-preprod.votredomaine.com --realm master --nb 100
    ```
    Le mot de passe reste lu depuis `KEYCLOAK_ADMIN_PASSWORD`.
 

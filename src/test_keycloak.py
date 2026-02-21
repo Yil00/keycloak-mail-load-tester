@@ -27,8 +27,11 @@ from typing import Optional
 import requests
 
 # Charger .env si présent (optionnel : pip install python-dotenv)
+# Charge depuis la racine du projet (parent de src/) pour que .env soit trouvé depuis make ou src/
 try:
     from dotenv import load_dotenv
+    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    load_dotenv(os.path.join(_root, ".env"))
     load_dotenv()
 except ImportError:
     pass
@@ -337,7 +340,7 @@ if __name__ == "__main__":
         type=int,
         default=5000,
         metavar="N",
-        help="Avec --strategy batch-pause: taille d’un lot avant pause (ex: 5000)",
+        help="Avec --strategy batch-pause: taille d'un lot avant pause (ex: 5000)",
     )
     parser.add_argument(
         "--rate",

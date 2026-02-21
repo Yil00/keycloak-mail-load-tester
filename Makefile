@@ -4,7 +4,7 @@
 PYTHON  := .venv/bin/python
 COMPOSE := docker compose
 
-.PHONY: help up down restart ps logs logs-keycloak logs-mailhog install test test-nb test-rate test-batch clean
+.PHONY: help up down restart ps logs logs-keycloak logs-mailhog keycloak-allow-http install test test-nb test-rate test-batch load-test load-test-ramp clean
 
 help:
 	@echo "Keycloak — cibles disponibles :"
@@ -23,6 +23,9 @@ help:
 	@echo "  make test-nb         Nombre personnalisé : make test-nb NB=500"
 	@echo "  make test-rate       Débit constant : make test-rate RATE=100 NB=1000"
 	@echo "  make test-batch      Lots + pause : make test-batch NB=5000 PAUSE=30"
+	@echo "  make load-test       Test de charge (constant) : CONCURRENT=20 DURATION=60"
+	@echo "  make load-test-ramp  Test de charge (ramp) : montée/descente progressive"
+	@echo "  make keycloak-allow-http  Autoriser HTTP (realm master) si « HTTPS required »"
 	@echo "  make clean           Arrêter les conteneurs et supprimer les volumes"
 	@echo ""
 
@@ -34,6 +37,12 @@ down:
 	$(COMPOSE) down
 
 restart: down up
+
+# Autoriser HTTP pour le realm master (enlève « HTTPS required »)
+# À lancer une fois que Keycloak a démarré (make up puis attendre ~40 s)
+keycloak-allow-http:
+	$(COMPOSE) exec -T postgres psql -U keycloak -d keycloak -c "UPDATE realm SET ssl_required = 'NONE' WHERE name = 'master';" || true
+	$(COMPOSE) restart keycloak
 
 ps:
 	$(COMPOSE) ps -a
@@ -63,17 +72,34 @@ PAUSE ?= 30
 
 test:
 	@test -d .venv || $(MAKE) install
-	$(PYTHON) test_keycloak.py --nb $(NB)
+	$(PYTHON) src/test_keycloak.py --nb $(NB)
 
 test-nb: test
 
 test-rate:
 	@test -d .venv || $(MAKE) install
-	$(PYTHON) test_keycloak.py --nb $(NB) --strategy rate --rate $(RATE)
+	$(PYTHON) src/test_keycloak.py --nb $(NB) --strategy rate --rate $(RATE)
 
 test-batch:
 	@test -d .venv || $(MAKE) install
-	$(PYTHON) test_keycloak.py --nb $(NB) --strategy batch-pause --send-batch-size $(SEND_BATCH_SIZE) --pause $(PAUSE)
+	$(PYTHON) src/test_keycloak.py --nb $(NB) --strategy batch-pause --send-batch-size $(SEND_BATCH_SIZE) --pause $(PAUSE)
+
+# Test de charge (connexions simultanées sur une durée)
+CONCURRENT ?= 10
+DURATION ?= 30
+# Ramp : users, ramp-up (s), hold (s), ramp-down (s)
+RAMP_USERS ?= 30
+RAMP_UP ?= 60
+RAMP_HOLD ?= 30
+RAMP_DOWN ?= 60
+
+load-test:
+	@test -d .venv || $(MAKE) install
+	$(PYTHON) src/keycloak_load_test.py --concurrent $(CONCURRENT) --duration $(DURATION)
+
+load-test-ramp:
+	@test -d .venv || $(MAKE) install
+	$(PYTHON) src/keycloak_load_test.py --mode ramp --users $(RAMP_USERS) --ramp-up $(RAMP_UP) --hold $(RAMP_HOLD) --ramp-down $(RAMP_DOWN)
 
 # ── Nettoyage ─────────────────────────────────────────────────────────────────
 clean:
