@@ -1,0 +1,94 @@
+{
+  "title": "Keycloak — Sessions et utilisateurs",
+  "uid": "keycloak-sessions-users",
+  "tags": ["keycloak", "prometheus", "sessions"],
+  "timezone": "browser",
+  "editable": true,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Comptes distincts connectés",
+      "description": "Nombre d’utilisateurs uniques ayant au moins une session active sur Keycloak à l’instant T. Une même personne avec plusieurs clients (ex. admin-cli + console) ne compte qu’une fois. Source : API Admin (keycloak-session-exporter).",
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "keycloak_distinct_users_connected{namespace=\"keycloak\"} or keycloak_distinct_users_connected", "legendFormat": "Comptes", "refId": "A", "instant": true}
+      ],
+      "fieldConfig": {"defaults": {"min": 0, "decimals": 0, "unit": "short", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 50}, {"color": "red", "value": 200}]}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "orientation": "auto", "textMode": "value_and_name", "colorMode": "value", "graphMode": "area", "justifyMode": "auto"}
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Sessions actives par client",
+      "description": "Évolution du nombre de sessions actives par client OAuth (admin-cli, security-admin-console, etc.). Utile pour voir les pics de connexion pendant les tests de charge ou l’usage de la console. Source : API Admin (keycloak-session-exporter).",
+      "gridPos": {"h": 8, "w": 18, "x": 6, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "keycloak_sessions_total{namespace=\"keycloak\"} or keycloak_sessions_total", "legendFormat": "{{client_id}}", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"min": 0, "unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10, "showPoints": "auto", "lineWidth": 2, "stacking": {"group": "A", "mode": "none"}}}, "overrides": []}
+    },
+    {
+      "id": 3,
+      "type": "bargauge",
+      "title": "Durée de session par utilisateur (connectés)",
+      "description": "Temps écoulé (en secondes) depuis le début de chaque session active. Un utilisateur avec plusieurs sessions (plusieurs clients) peut apparaître plusieurs fois. Limité aux 100 premières sessions pour limiter la cardinalité. Source : API Admin user-sessions (keycloak-session-exporter).",
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "keycloak_session_duration_seconds{namespace=\"keycloak\"} or keycloak_session_duration_seconds", "legendFormat": "{{username}}", "refId": "A", "instant": true}
+      ],
+      "fieldConfig": {"defaults": {"min": 0, "unit": "s", "decimals": 0, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 3600}, {"color": "red", "value": 86400}]}, "max": 86400, "custom": {"orientation": "horizontal", "displayMode": "gradient"}}, "overrides": []},
+      "options": {"displayMode": "gradient", "showUnfilled": true, "minVizWidth": 0, "minVizHeight": 16, "namePlacement": "auto", "valueMode": "color"}
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Durée de session — détail (tableau)",
+      "description": "Liste des utilisateurs actuellement connectés avec la durée de leur session en secondes. Colonnes : user_id, username, durée. Utile pour un export ou un tri précis. Source : keycloak_session_duration_seconds.",
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "keycloak_session_duration_seconds{namespace=\"keycloak\"} or keycloak_session_duration_seconds", "format": "table", "refId": "A", "instant": true}
+      ],
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "displayMode": "auto", "inspect": false}, "mappings": [], "thresholds": {"steps": [{"color": "green", "value": null}]}, "unit": "s", "decimals": 1}, "overrides": [{"matcher": {"id": "byName", "options": "user_id"}, "properties": [{"id": "custom.width", "value": 280}]}, {"matcher": {"id": "byName", "options": "username"}, "properties": [{"id": "custom.width", "value": 120}]}, {"matcher": {"id": "byName", "options": "Value"}, "properties": [{"id": "displayName", "value": "Durée (s)"}, {"id": "unit", "value": "s"}]}]},
+      "transformations": [{"id": "labelsToFields", "options": {"mode": "columns"}}]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Dernières connexions (id, username, email)",
+      "description": "Liste des derniers événements de type LOGIN : timestamp, identifiant utilisateur (user_id), username et email quand disponibles. Nécessite l’enregistrement des événements activé dans Keycloak (Realm → Events → Config). Source : API events + users (keycloak-session-exporter).",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 18},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "keycloak_last_login_timestamp_seconds{namespace=\"keycloak\"} or keycloak_last_login_timestamp_seconds", "format": "table", "refId": "A", "instant": true}
+      ],
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "displayMode": "auto"}, "mappings": [], "thresholds": {"steps": [{"color": "green", "value": null}]}, "unit": "dateTimeFromEpochSeconds"}, "overrides": [{"matcher": {"id": "byName", "options": "Value"}, "properties": [{"id": "displayName", "value": "Date / heure connexion"}, {"id": "unit", "value": "dateTimeFromEpochSeconds"}]}, {"matcher": {"id": "byName", "options": "user_id"}, "properties": [{"id": "custom.width", "value": 280}]}, {"matcher": {"id": "byName", "options": "username"}, "properties": [{"id": "custom.width", "value": 140}]}, {"matcher": {"id": "byName", "options": "email"}, "properties": [{"id": "custom.width", "value": 200}]}]},
+      "transformations": [{"id": "labelsToFields", "options": {"mode": "columns"}}]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Évolution des comptes distincts connectés",
+      "description": "Courbe du nombre d’utilisateurs distincts connectés dans le temps. Permet de voir les phases de montée ou descente de charge (tests, heures de pointe). Source : keycloak_distinct_users_connected.",
+      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 28},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "keycloak_distinct_users_connected{namespace=\"keycloak\"} or keycloak_distinct_users_connected", "legendFormat": "Comptes distincts", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"min": 0, "unit": "short", "decimals": 0}, "overrides": []}
+    },
+    {
+      "id": 7,
+      "type": "text",
+      "title": "À propos de ce dashboard",
+      "gridPos": {"h": 3, "w": 24, "x": 0, "y": 34},
+      "options": {"content": "**Source des données** : toutes les métriques sessions/utilisateurs viennent du service **keycloak-session-exporter** (API Admin Keycloak). Après un `make up`, attendre 1–2 minutes que l’exporter soit prêt.\n\n**Dernières connexions** : le tableau nécessite que l’enregistrement des événements soit activé dans Keycloak : **Realm** → **Events** → **Config** → cocher **Save Events** et inclure le type **LOGIN**. Sans cela, le panneau restera vide.", "mode": "markdown"}
+    }
+  ],
+  "schemaVersion": 38,
+  "version": 1
+}

@@ -21,7 +21,10 @@ services:
       retries: 10
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    build:
+      context: .
+      dockerfile: Dockerfile.keycloak
+    image: keycloak-with-events:26.0
     container_name: keycloak
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
@@ -34,15 +37,42 @@ services:
       KC_HTTP_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
       KC_HTTP_METRICS_HISTOGRAMS_ENABLED: "true"
+      # Event metrics : la feature est activée dans l'image (Dockerfile.keycloak). Ne pas définir KC_EVENT_METRICS_USER_ENABLED au runtime (conflit avec le build).
+      KC_EVENT_METRICS_USER_EVENTS: "login,logout"
     ports:
       - "${KEYCLOAK_PORT:-8080}:8080"
       - "${KEYCLOAK_MANAGEMENT_PORT:-9000}:9000"
-    command: start-dev
+    # start --optimized pour utiliser le build inclus (feature user-event-metrics) ; hostname pour HTTP local
+    command: start --optimized --http-enabled=true --hostname=localhost
     depends_on:
       postgres:
         condition: service_healthy
       mailhog:
         condition: service_started
+
+  keycloak-session-exporter:
+    image: python:3.11-slim
+    container_name: keycloak_session_exporter
+    working_dir: /app
+    volumes:
+      - .:/app:ro
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-master}
+      KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      EXPORTER_PORT: "9091"
+    command: ["sh", "-c", "pip install -q requests python-dotenv && exec python src/keycloak_session_exporter.py"]
+    ports:
+      - "9091:9091"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9091/health', timeout=3)"]
+      interval: 10s
+      start_period: 90s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - keycloak
 
   prometheus:
     image: prom/prometheus:latest
@@ -57,6 +87,7 @@ services:
       - "${PROMETHEUS_PORT:-9090}:9090"
     depends_on:
       - keycloak
+      - keycloak-session-exporter
 
   grafana:
     image: grafana/grafana:latest

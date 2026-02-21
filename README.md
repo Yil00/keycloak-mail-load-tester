@@ -8,6 +8,8 @@ Setup Keycloak avec Postgres et MailHog pour tester l’envoi de mails en masse.
 
 → Notes de release : [docs/Release.md](docs/Release.md)
 
+**Documentation monitoring** : [docs/grafana-dashboards.md](docs/grafana-dashboards.md) (dashboards, graphiques, légendes) · [docs/prometheus.md](docs/prometheus.md) (Prometheus, config, tutoriel PromQL).
+
 ---
 
 ## Configuration (.env)
@@ -39,8 +41,10 @@ Variables principales : `KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_P
 | `make test-nb NB=500` | Lancer le test avec un nombre personnalisé |
 | `make test-rate RATE=100 NB=1000` | Test avec débit constant (ex. 100 mails/s) |
 | `make test-batch NB=5000 PAUSE=30` | Test par lots + pause (ex. 5k mails puis 30 s) |
-| `make load-test CONCURRENT=20 DURATION=60` | Test de charge (mode constant) |
-| `make load-test-ramp` | Test de charge (ramp : montée/descente progressive) |
+| `make load-test CONCURRENT=20 DURATION=60` | Test de charge (mode constant, un compte) |
+| `make load-test-ramp` | Test de charge (ramp, un compte) |
+| `make load-test-multi` | Test de charge multi-comptes (création users puis test) |
+| `make load-test-multi-ramp` | Idem en mode ramp |
 | `make clean` | Arrêter les conteneurs et supprimer les volumes |
 
 ---
@@ -49,11 +53,16 @@ Variables principales : `KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_P
 
 ### 1. Démarrer l’environnement
 
+Keycloak est construit à partir de `Dockerfile.keycloak` (feature **user-event-metrics** pour les panneaux Grafana « Logins (événements) »). **La première fois**, construire l’image puis démarrer :
+
 ```bash
+docker compose build keycloak
 make up
 # Attendre ~30–40 s que Keycloak démarre
 make logs-keycloak   # surveiller le démarrage
 ```
+
+Ou en une commande : `docker compose up -d --build`.
 
 **Si la page Keycloak affiche « HTTPS required »** : exécuter une fois (après que Keycloak soit démarré) :
 ```bash
@@ -126,13 +135,18 @@ make load-test
 make load-test CONCURRENT=20 DURATION=60
 ```
 
+→ **Explication (tokens vs comptes réels)** : [docs/load-test-tokens.md](docs/load-test-tokens.md).
+
 **Mode ramp** (montée/descente progressive) : `make load-test-ramp` ou `make load-test-ramp RAMP_USERS=50 RAMP_UP=120 RAMP_HOLD=60 RAMP_DOWN=90`.
+
+**Multi-comptes** (simulation proche production, chaque thread = comptes différents) : le script **`src/keycloak_load_test_multi_user.py`** crée N users dans le realm, lance le test, puis les supprime. Commandes : `make load-test-multi` (défaut : 50 users, 10 threads, 30 s) ou `make load-test-multi-ramp`. Variables : `CREATE_USERS`, `MULTI_USER_PASSWORD`, `CONCURRENT`, `DURATION`. Option fichier : `--accounts-file path` (une ligne `username:password` par compte).
 
 En direct :
 
 ```bash
 .venv/bin/python src/keycloak_load_test.py --concurrent 20 --duration 60
 .venv/bin/python src/keycloak_load_test.py --mode ramp --users 30 --ramp-up 60 --hold 30 --ramp-down 60
+.venv/bin/python src/keycloak_load_test_multi_user.py --create-users 50 --concurrent 20 --duration 60
 ```
 
 Options : `--concurrent`, `--duration` (mode constant) ; `--mode ramp`, `--users`, `--ramp-up`, `--hold`, `--ramp-down` (mode ramp) ; `--url`, `--realm`, `--user`, `--password`, `--timeout`, `--warmup`. Les variables `KEYCLOAK_*` du `.env` sont utilisées par défaut.
@@ -183,7 +197,9 @@ Keycloak expose des **métriques** (débit, latence, requêtes actives) sur le p
 | **Logs Keycloak** | `make logs-keycloak` |
 | **Nombre d’utilisateurs en BDD** | `docker exec -it keycloak_postgres psql -U keycloak -c "SELECT count(*) FROM user_entity;"` |
 
-**Dashboard Grafana** : menu **Keycloak** → **Keycloak — Vue d'ensemble** (débit req/s, latence moyenne, requêtes actives, 2xx/4xx/5xx). Lancer `make load-test` tout en regardant Grafana pour voir la charge en direct. Variables optionnelles : `GRAFANA_PORT`, `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`, `PROMETHEUS_PORT`, `KEYCLOAK_MANAGEMENT_PORT`.
+**Dashboards Grafana** (menu **Keycloak**) : **Keycloak — Vue d'ensemble** (débit req/s, latence, 2xx/4xx/5xx, comptes distincts, sessions par client, logins) ; **Keycloak — Sessions et utilisateurs** (comptes distincts, sessions par client, durée de session par user, tableau des dernières connexions id/username/email, évolution des comptes distincts). Lancer `make load-test` ou `make load-test-multi-ramp` tout en regardant Grafana pour voir la charge en direct. Variables optionnelles : `GRAFANA_PORT`, `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`, `PROMETHEUS_PORT`, `KEYCLOAK_MANAGEMENT_PORT`.
+
+Les panneaux **Logins (événements)** utilisent l’image Keycloak construite avec `Dockerfile.keycloak`. Si tout reste à 0, lancer `docker compose build keycloak` puis redémarrer. Voir [docs/grafana-metrics.md](docs/grafana-metrics.md) (activation de la feature `user-event-metrics`, vérification des métriques). Le **nombre de comptes distincts connectés** et les **sessions actives par client** sont fournis par le service **keycloak-session-exporter** (script `src/keycloak_session_exporter.py`), qui interroge l’API Admin Keycloak et expose des métriques Prometheus ; voir [docs/session-exporter.md](docs/session-exporter.md). Liste des dashboards et légendes : [docs/grafana-dashboards.md](docs/grafana-dashboards.md). Prometheus (config, tutoriel) : [docs/prometheus.md](docs/prometheus.md).
 
 Conseil : commencer avec `make test` (100 mails) pour valider la config, puis par exemple `make test-nb NB=10000`.
 

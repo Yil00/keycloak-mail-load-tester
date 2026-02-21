@@ -1,1 +1,134 @@
-{"title":"Keycloak — Vue d'ensemble","uid":"keycloak-overview","tags":["keycloak","prometheus"],"timezone":"browser","editable":true,"panels":[{"id":1,"type":"timeseries","title":"Débit (requêtes / s)","gridPos":{"h":8,"w":12,"x":0,"y":0},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum(rate(http_server_requests_seconds_count{namespace=\"keycloak\"}[1m]))","legendFormat":"Total req/s"}],"fieldConfig":{"defaults":{"unit":"reqps","min":0},"overrides":[]}},{"id":2,"type":"timeseries","title":"Latence moyenne (s)","gridPos":{"h":8,"w":12,"x":12,"y":0},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum(rate(http_server_requests_seconds_sum{namespace=\"keycloak\"}[1m])) / sum(rate(http_server_requests_seconds_count{namespace=\"keycloak\"}[1m]))","legendFormat":"Latence moyenne"}],"fieldConfig":{"defaults":{"unit":"s","min":0},"overrides":[]}},{"id":3,"type":"gauge","title":"Requêtes actives (estim.)","description":"Estimation via Little : débit × latence (fenêtre 1 min). Keycloak n'expose pas la jauge native ; cette formule approxime le nombre de requêtes en vol.","gridPos":{"h":6,"w":8,"x":0,"y":8},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum(rate(http_server_requests_seconds_sum{namespace=\"keycloak\"}[1m])) or vector(0)","legendFormat":"Actives (estim.)"}],"fieldConfig":{"defaults":{"min":0,"thresholds":{"steps":[{"color":"green","value":null},{"color":"yellow","value":50},{"color":"red","value":100}]},"decimals":1},"overrides":[]}},{"id":4,"type":"timeseries","title":"Requêtes par statut HTTP","gridPos":{"h":8,"w":24,"x":0,"y":14},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum(rate(http_server_requests_seconds_count{namespace=\"keycloak\", status=~\"2..\"}[1m]))","legendFormat":"2xx"},{"expr":"sum(rate(http_server_requests_seconds_count{namespace=\"keycloak\", status=~\"4..\"}[1m]))","legendFormat":"4xx"},{"expr":"sum(rate(http_server_requests_seconds_count{namespace=\"keycloak\", status=~\"5..\"}[1m]))","legendFormat":"5xx"}],"fieldConfig":{"defaults":{"unit":"reqps","min":0},"overrides":[]}}],"schemaVersion":38,"version":1}
+{
+  "title": "Keycloak — Vue d'ensemble",
+  "uid": "keycloak-overview",
+  "tags": ["keycloak", "prometheus"],
+  "timezone": "browser",
+  "editable": true,
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Débit (requêtes / s)",
+      "description": "Nombre total de requêtes HTTP traitées par seconde par Keycloak (tous endpoints). Reflète l’activité globale du serveur (logins, API admin, etc.).",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(rate(http_server_requests_seconds_count{namespace=\"keycloak\"}[1m]))", "legendFormat": "Total req/s"}],
+      "fieldConfig": {"defaults": {"unit": "reqps", "min": 0}, "overrides": []}
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Latence moyenne (s)",
+      "description": "Temps de réponse moyen des requêtes HTTP (fenêtre 1 min). Une hausse peut indiquer une saturation ou une charge base de données.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(rate(http_server_requests_seconds_sum{namespace=\"keycloak\"}[1m])) / sum(rate(http_server_requests_seconds_count{namespace=\"keycloak\"}[1m]))", "legendFormat": "Latence moyenne"}],
+      "fieldConfig": {"defaults": {"unit": "s", "min": 0}, "overrides": []}
+    },
+    {
+      "id": 3,
+      "type": "gauge",
+      "title": "Requêtes actives (estim.)",
+      "description": "Estimation du nombre de requêtes en cours de traitement (formule de Little : débit × latence sur 1 min). Keycloak n’expose pas de jauge native ; à 0 quand il n’y a plus de trafic.",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(rate(http_server_requests_seconds_sum{namespace=\"keycloak\"}[1m])) or vector(0)", "legendFormat": "Actives (estim.)"}],
+      "fieldConfig": {"defaults": {"min": 0, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 50}, {"color": "red", "value": 100}]}, "decimals": 1}, "overrides": []}
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Taux d'erreur (%)",
+      "description": "Part des requêtes en 4xx et 5xx par rapport au total (fenêtre 1 min). Utile pour détecter des rejets (403, 429) ou des erreurs serveur.",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "(sum(rate(http_server_requests_seconds_count{namespace=\"keycloak\", status=~\"4..|5..\"}[1m])) / sum(rate(http_server_requests_seconds_count{namespace=\"keycloak\"}[1m])) * 100) or vector(0)", "legendFormat": "4xx+5xx %"}],
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []}
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Taux de succès 2xx (%)",
+      "description": "Part des requêtes réussies (2xx) par rapport au total. Complément du taux d’erreur ; proche de 100 % en conditions normales.",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "(sum(rate(http_server_requests_seconds_count{namespace=\"keycloak\", status=~\"2..\"}[1m])) / sum(rate(http_server_requests_seconds_count{namespace=\"keycloak\"}[1m])) * 100) or vector(0)", "legendFormat": "2xx %"}],
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []}
+    },
+    {
+      "id": 7,
+      "type": "text",
+      "title": "Informations métriques",
+      "description": "Ce que ce dashboard peut et ne peut pas afficher.",
+      "gridPos": {"h": 4, "w": 24, "x": 0, "y": 14},
+      "options": {
+        "content": "**Affiché** : débit HTTP, latence, requêtes actives (estim.), 2xx/4xx/5xx, taux d'erreur/succès, et (si event metrics activées) **logins (événements)** : débit et total sur la période.\n\n**Sessions (exporter)** : *comptes distincts connectés* et *sessions actives par client* sont fournis par l'API Admin Keycloak via le service keycloak-session-exporter.",
+        "mode": "markdown"
+      }
+    },
+    {
+      "id": 10,
+      "type": "gauge",
+      "title": "Comptes distincts connectés (temps réel)",
+      "description": "Nombre d'utilisateurs (userId) ayant au moins une session active. Source : API Admin via keycloak-session-exporter.",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 18},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "keycloak_distinct_users_connected{namespace=\"keycloak\"} or keycloak_distinct_users_connected", "legendFormat": "Comptes distincts"}
+      ],
+      "fieldConfig": {"defaults": {"min": 0, "decimals": 0, "unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Sessions actives par client",
+      "description": "Sessions actives par client OAuth. Source : API Admin via keycloak-session-exporter.",
+      "gridPos": {"h": 6, "w": 16, "x": 8, "y": 18},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "keycloak_sessions_total{namespace=\"keycloak\"} or keycloak_sessions_total", "legendFormat": "{{client_id}}"}
+      ],
+      "fieldConfig": {"defaults": {"min": 0, "unit": "short"}, "overrides": []}
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Logins (événements) — débit",
+      "description": "Nombre d'événements login par seconde (event metrics Keycloak). Chaque succès d'authentification = 1 événement ; ce n'est pas le nombre de comptes distincts. Nécessite KC_EVENT_METRICS_USER_ENABLED=true.",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 24},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(rate(keycloak_user_events_total{namespace=\"keycloak\",event=\"login\",error=\"\"}[1m])) or vector(0)", "legendFormat": "Logins/s"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "reqps", "min": 0}, "overrides": []}
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Connexions réussies (total sur la période)",
+      "description": "**Ce que représente le nombre** : nombre de fois qu’une authentification a réussi pendant la plage temporelle choisie (ex. « Dernière 1 heure »). Ex. 49 K = 49 000 connexions. **Important** : ce n’est pas le nombre de personnes uniques — si un même utilisateur se connecte 10 fois, il compte pour 10. Pour les comptes distincts connectés en temps réel, voir le panneau « Comptes distincts connectés » ou le dashboard « Sessions et utilisateurs ».",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 24},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(increase(keycloak_user_events_total{namespace=\"keycloak\",event=\"login\",error=\"\"}[$__range])) or vector(0)", "legendFormat": "Connexions réussies"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0, "decimals": 0, "suffix": " connexions", "displayName": "Total"}, "overrides": []}
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Requêtes par statut HTTP",
+      "description": "Débit par type de réponse : 2xx (succès), 4xx (client, ex. 403), 5xx (serveur). Permet de voir la répartition des succès et des erreurs dans le temps.",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 30},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(rate(http_server_requests_seconds_count{namespace=\"keycloak\", status=~\"2..\"}[1m]))", "legendFormat": "2xx"},
+        {"expr": "sum(rate(http_server_requests_seconds_count{namespace=\"keycloak\", status=~\"4..\"}[1m]))", "legendFormat": "4xx"},
+        {"expr": "sum(rate(http_server_requests_seconds_count{namespace=\"keycloak\", status=~\"5..\"}[1m]))", "legendFormat": "5xx"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "reqps", "min": 0}, "overrides": []}
+    }
+  ],
+  "schemaVersion": 38,
+  "version": 2
+}

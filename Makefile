@@ -4,7 +4,7 @@
 PYTHON  := .venv/bin/python
 COMPOSE := docker compose
 
-.PHONY: help up down restart ps logs logs-keycloak logs-mailhog keycloak-allow-http install test test-nb test-rate test-batch load-test load-test-ramp clean
+.PHONY: help up down restart ps logs logs-keycloak logs-mailhog keycloak-allow-http install test test-nb test-rate test-batch load-test load-test-ramp load-test-multi load-test-multi-ramp clean
 
 help:
 	@echo "Keycloak — cibles disponibles :"
@@ -25,6 +25,8 @@ help:
 	@echo "  make test-batch      Lots + pause : make test-batch NB=5000 PAUSE=30"
 	@echo "  make load-test       Test de charge (constant) : CONCURRENT=20 DURATION=60"
 	@echo "  make load-test-ramp  Test de charge (ramp) : montée/descente progressive"
+	@echo "  make load-test-multi Test multi-comptes : CREATE_USERS=50 CONCURRENT=20 DURATION=30"
+	@echo "  make load-test-multi-ramp  Idem ramp : CREATE_USERS=50 RAMP_USERS=30 RAMP_UP=60 RAMP_HOLD=30 RAMP_DOWN=60"
 	@echo "  make keycloak-allow-http  Autoriser HTTP (realm master) si « HTTPS required »"
 	@echo "  make clean           Arrêter les conteneurs et supprimer les volumes"
 	@echo ""
@@ -100,6 +102,18 @@ load-test:
 load-test-ramp:
 	@test -d .venv || $(MAKE) install
 	$(PYTHON) src/keycloak_load_test.py --mode ramp --users $(RAMP_USERS) --ramp-up $(RAMP_UP) --hold $(RAMP_HOLD) --ramp-down $(RAMP_DOWN)
+
+# Test de charge multi-comptes (simulation proche production)
+CREATE_USERS ?= 50
+MULTI_USER_PASSWORD ?= testpass
+
+load-test-multi:
+	@test -d .venv || $(MAKE) install
+	$(PYTHON) src/keycloak_load_test_multi_user.py --create-users $(CREATE_USERS) --user-password $(MULTI_USER_PASSWORD) --concurrent $(CONCURRENT) --duration $(DURATION)
+
+load-test-multi-ramp:
+	@test -d .venv || $(MAKE) install
+	$(PYTHON) src/keycloak_load_test_multi_user.py --create-users $(CREATE_USERS) --user-password $(MULTI_USER_PASSWORD) --mode ramp --users $(RAMP_USERS) --ramp-up $(RAMP_UP) --hold $(RAMP_HOLD) --ramp-down $(RAMP_DOWN)
 
 # ── Nettoyage ─────────────────────────────────────────────────────────────────
 clean:
