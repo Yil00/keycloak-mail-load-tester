@@ -44,7 +44,8 @@ def _env_int(key: str, default: int) -> int:
         return default
 
 
-_DEFAULT_URL   = "http://localhost:8080"
+_DEFAULT_PORT  = os.environ.get("KEYCLOAK_PORT", "8080")
+_DEFAULT_URL   = f"http://localhost:{_DEFAULT_PORT}"
 _DEFAULT_REALM = "master"
 _DEFAULT_USER  = "admin"
 _DEFAULT_PASS  = "admin"

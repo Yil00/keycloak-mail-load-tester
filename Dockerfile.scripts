@@ -1,0 +1,10 @@
+# Image pour exécuter les scripts src/ (tests mails, load-test, admin-utils)
+# Montage du projet en /app au run ; .env lu depuis l'hôte
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY scripts/wait-for-keycloak.sh /wait-for-keycloak.sh
+RUN chmod +x /wait-for-keycloak.sh
+# Attend que Keycloak réponde avant d'exécuter la commande (make test, load-test, etc.)
+ENTRYPOINT ["/wait-for-keycloak.sh"]

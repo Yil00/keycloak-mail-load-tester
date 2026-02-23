@@ -14,7 +14,7 @@ Setup Keycloak avec Postgres et MailHog pour tester l’envoi de mails en masse.
 
 ## Configuration (.env)
 
-Les variables (ports, mots de passe, URL Keycloak) sont lues depuis **`.env`** par `docker compose` et par les scripts dans `src/` (si `python-dotenv` est installé).
+Les variables (ports, mots de passe, URL Keycloak) sont lues depuis **`.env`** par `docker compose` et par les scripts dans `src/`. Les scripts s’exécutent dans un conteneur Docker qui monte le projet et lit le `.env` ; l’URL Keycloak est alors `http://keycloak:8080` (conteneur keycloak-session-exporter, même réseau que Keycloak).
 
 - **`env.dist`** : modèle avec toutes les variables. Copier vers `.env` et adapter :  
   `cp env.dist .env`
@@ -36,7 +36,7 @@ Variables principales : `KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_P
 | `make logs` | Suivre les logs de tous les services |
 | `make logs-keycloak` | Suivre les logs Keycloak uniquement |
 | `make logs-mailhog` | Suivre les logs MailHog uniquement |
-| `make install` | Créer le venv et installer `requests` + `python-dotenv` |
+| `make install` | Construire l’image Docker des scripts exécutés dans keycloak-session-exporter, make up requis |
 | `make test` | Lancer le test d’envoi (100 mails, débit max) |
 | `make test-nb NB=500` | Lancer le test avec un nombre personnalisé |
 | `make test-rate RATE=100 NB=1000` | Test avec débit constant (ex. 100 mails/s) |
@@ -62,8 +62,9 @@ Keycloak est construit à partir de `Dockerfile.keycloak` (feature **user-event-
 ```bash
 docker compose build keycloak
 make up
-# Attendre ~30–40 s que Keycloak démarre
+# Attendre ~30–40 s (ou 1–2 min sur Mac ARM) que Keycloak démarre
 make logs-keycloak   # surveiller le démarrage
+# Pour make test / load-test : si la stack est déjà up, pas d'attente ; sinon le script attend Keycloak (max 4 min).
 ```
 
 Ou en une commande : `docker compose up -d --build`.

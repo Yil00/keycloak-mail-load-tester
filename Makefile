@@ -1,32 +1,53 @@
 # Keycloak + Postgres + MailHog — commandes Make
 # Usage : make [cible]
+# Les scripts src/ s'exécutent dans le conteneur keycloak-session-exporter (même réseau que Keycloak).
 
-PYTHON  := .venv/bin/python
 COMPOSE := docker compose
+# Exécuter un script Python dans keycloak-session-exporter (make up requis)
+EXEC_SCRIPTS := $(COMPOSE) exec -T keycloak-session-exporter
 
-.PHONY: help up down restart ps logs logs-keycloak logs-mailhog keycloak-allow-http install test test-nb test-rate test-batch load-test load-test-ramp load-test-multi load-test-multi-ramp clean
+.PHONY: help up down restart ps logs logs-keycloak logs-mailhog keycloak-allow-http install test test-nb test-rate test-batch load-test load-test-ramp load-test-multi load-test-multi-ramp create-superadmin list-users delete-test-users clean
 
 help:
 	@echo "Keycloak — cibles disponibles :"
 	@echo ""
+	@echo "  Docker"
+	@echo "  ──────"
 	@echo "  make up              Démarrer tous les services (Postgres, Keycloak, MailHog)"
 	@echo "  make down            Arrêter et supprimer les conteneurs"
 	@echo "  make restart         Redémarrer tous les services"
 	@echo "  make ps              Afficher l’état des conteneurs"
 	@echo ""
+	@echo "  Logs"
+	@echo "  ────"
 	@echo "  make logs            Suivre les logs de tous les services"
 	@echo "  make logs-keycloak   Suivre les logs Keycloak uniquement"
 	@echo "  make logs-mailhog    Suivre les logs MailHog uniquement"
 	@echo ""
-	@echo "  make install         Créer le venv et installer les dépendances (requests)"
+	@echo "  Install & tests (mails)"
+	@echo "  ─────────────────────"
+	@echo "  make install         (aucune action : les scripts tournent dans keycloak-session-exporter)"
 	@echo "  make test            Lancer le test d’envoi (100 mails, débit max)"
 	@echo "  make test-nb         Nombre personnalisé : make test-nb NB=500"
 	@echo "  make test-rate       Débit constant : make test-rate RATE=100 NB=1000"
 	@echo "  make test-batch      Lots + pause : make test-batch NB=5000 PAUSE=30"
+	@echo ""
+	@echo "  Tests de charge"
+	@echo "  ───────────────"
 	@echo "  make load-test       Test de charge (constant) : CONCURRENT=20 DURATION=60"
 	@echo "  make load-test-ramp  Test de charge (ramp) : montée/descente progressive"
 	@echo "  make load-test-multi Test multi-comptes : CREATE_USERS=50 CONCURRENT=20 DURATION=30"
 	@echo "  make load-test-multi-ramp  Idem ramp : CREATE_USERS=50 RAMP_USERS=30 RAMP_UP=60 RAMP_HOLD=30 RAMP_DOWN=60"
+	@echo ""
+	@echo "  Admin Keycloak (utilisateurs)"
+	@echo "  ─────────────────────────────"
+	@echo "  make create-superadmin     Créer un superadmin (SUPERADMIN_USER=, SUPERADMIN_PASSWORD=)"
+	@echo "  make list-users      Nombre d'utilisateurs par realm"
+	@echo "  make delete-test-users  Supprimer les users de test (loadtest_* et testuser_*)"
+	@echo "  make delete-test-users DRY_RUN=1  Idem en simulation (affiche sans supprimer)"
+	@echo ""
+	@echo "  Keycloak & nettoyage"
+	@echo "  ───────────────────"
 	@echo "  make keycloak-allow-http  Autoriser HTTP (realm master) si « HTTPS required »"
 	@echo "  make clean           Arrêter les conteneurs et supprimer les volumes"
 	@echo ""
@@ -59,10 +80,9 @@ logs-keycloak:
 logs-mailhog:
 	$(COMPOSE) logs -f mailhog
 
-# ── Test Python ──────────────────────────────────────────────────────────────
+# ── Scripts (conteneur keycloak-session-exporter) ───────────────────────────────
 install:
-	python3 -m venv .venv
-	.venv/bin/pip install requests python-dotenv
+	@echo "Les scripts s'exécutent dans keycloak-session-exporter. Lancez \"make up\" puis make test / load-test / etc."
 
 # NB par défaut = 100
 NB ?= 100
@@ -73,18 +93,15 @@ SEND_BATCH_SIZE ?= 5000
 PAUSE ?= 30
 
 test:
-	@test -d .venv || $(MAKE) install
-	$(PYTHON) src/test_keycloak.py --nb $(NB)
+	$(EXEC_SCRIPTS) python src/test_keycloak.py --nb $(NB)
 
 test-nb: test
 
 test-rate:
-	@test -d .venv || $(MAKE) install
-	$(PYTHON) src/test_keycloak.py --nb $(NB) --strategy rate --rate $(RATE)
+	$(EXEC_SCRIPTS) python src/test_keycloak.py --nb $(NB) --strategy rate --rate $(RATE)
 
 test-batch:
-	@test -d .venv || $(MAKE) install
-	$(PYTHON) src/test_keycloak.py --nb $(NB) --strategy batch-pause --send-batch-size $(SEND_BATCH_SIZE) --pause $(PAUSE)
+	$(EXEC_SCRIPTS) python src/test_keycloak.py --nb $(NB) --strategy batch-pause --send-batch-size $(SEND_BATCH_SIZE) --pause $(PAUSE)
 
 # Test de charge (connexions simultanées sur une durée)
 CONCURRENT ?= 10
@@ -96,24 +113,35 @@ RAMP_HOLD ?= 30
 RAMP_DOWN ?= 60
 
 load-test:
-	@test -d .venv || $(MAKE) install
-	$(PYTHON) src/keycloak_load_test.py --concurrent $(CONCURRENT) --duration $(DURATION)
+	$(EXEC_SCRIPTS) python src/keycloak_load_test.py --concurrent $(CONCURRENT) --duration $(DURATION)
 
 load-test-ramp:
-	@test -d .venv || $(MAKE) install
-	$(PYTHON) src/keycloak_load_test.py --mode ramp --users $(RAMP_USERS) --ramp-up $(RAMP_UP) --hold $(RAMP_HOLD) --ramp-down $(RAMP_DOWN)
+	$(EXEC_SCRIPTS) python src/keycloak_load_test.py --mode ramp --users $(RAMP_USERS) --ramp-up $(RAMP_UP) --hold $(RAMP_HOLD) --ramp-down $(RAMP_DOWN)
 
 # Test de charge multi-comptes (simulation proche production)
 CREATE_USERS ?= 50
 MULTI_USER_PASSWORD ?= testpass
 
 load-test-multi:
-	@test -d .venv || $(MAKE) install
-	$(PYTHON) src/keycloak_load_test_multi_user.py --create-users $(CREATE_USERS) --user-password $(MULTI_USER_PASSWORD) --concurrent $(CONCURRENT) --duration $(DURATION)
+	$(EXEC_SCRIPTS) python src/keycloak_load_test_multi_user.py --create-users $(CREATE_USERS) --user-password $(MULTI_USER_PASSWORD) --concurrent $(CONCURRENT) --duration $(DURATION)
 
 load-test-multi-ramp:
-	@test -d .venv || $(MAKE) install
-	$(PYTHON) src/keycloak_load_test_multi_user.py --create-users $(CREATE_USERS) --user-password $(MULTI_USER_PASSWORD) --mode ramp --users $(RAMP_USERS) --ramp-up $(RAMP_UP) --hold $(RAMP_HOLD) --ramp-down $(RAMP_DOWN)
+	$(EXEC_SCRIPTS) python src/keycloak_load_test_multi_user.py --create-users $(CREATE_USERS) --user-password $(MULTI_USER_PASSWORD) --mode ramp --users $(RAMP_USERS) --ramp-up $(RAMP_UP) --hold $(RAMP_HOLD) --ramp-down $(RAMP_DOWN)
+
+# ── Admin Keycloak (superadmin, list-users, delete-test-users) ───────────────
+SUPERADMIN_USER ?= superadmin
+SUPERADMIN_PASSWORD ?=
+REALM ?= master
+
+create-superadmin:
+	@test -n "$(SUPERADMIN_PASSWORD)" || (echo "Usage: make create-superadmin SUPERADMIN_USER=myadmin SUPERADMIN_PASSWORD=secret"; exit 1)
+	$(EXEC_SCRIPTS) -e SUPERADMIN_USER="$(SUPERADMIN_USER)" -e SUPERADMIN_PASSWORD="$(SUPERADMIN_PASSWORD)" -e REALM="$(REALM)" python src/keycloak_admin_utils.py create-superadmin --username "$(SUPERADMIN_USER)" --password "$(SUPERADMIN_PASSWORD)" --realm "$(REALM)"
+
+list-users:
+	$(EXEC_SCRIPTS) python src/keycloak_admin_utils.py list-users
+
+delete-test-users:
+	$(EXEC_SCRIPTS) -e REALM="$(REALM)" python src/keycloak_admin_utils.py delete-test-users $(if $(filter 1,$(DRY_RUN)),--dry-run) --realm "$(REALM)"
 
 # ── Nettoyage ─────────────────────────────────────────────────────────────────
 clean:

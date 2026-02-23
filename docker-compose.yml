@@ -57,7 +57,7 @@ services:
     volumes:
       - .:/app:ro
     environment:
-      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_URL: http://host.docker.internal:${KEYCLOAK_PORT:-8080}
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-master}
       KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}

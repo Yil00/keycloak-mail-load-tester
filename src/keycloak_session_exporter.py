@@ -29,7 +29,8 @@ except ImportError:
 
 import requests
 
-DEFAULT_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8080").rstrip("/")
+_DEFAULT_PORT = os.environ.get("KEYCLOAK_PORT", "8080")
+DEFAULT_URL = os.environ.get("KEYCLOAK_URL", f"http://localhost:{_DEFAULT_PORT}").rstrip("/")
 DEFAULT_REALM = os.environ.get("KEYCLOAK_REALM", "master")
 DEFAULT_ADMIN = os.environ.get("KEYCLOAK_ADMIN_USER", "admin")
 DEFAULT_ADMIN_PASS = os.environ.get("KEYCLOAK_ADMIN_PASSWORD", "admin")
