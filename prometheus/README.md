@@ -4,7 +4,7 @@ Ce dossier contient la configuration Prometheus utilisée par le projet Keycloak
 
 ## Fichier de configuration
 
-- **prometheus.yml** : jobs de scrape pour Keycloak (port 9000) et keycloak-session-exporter (port 9091), avec labels `namespace: keycloak`.
+- **prometheus.yml** : jobs de scrape pour Keycloak (port 9000) et keycloak-session-exporter (port 9091), avec labels `namespace: keycloak`. Le job `keycloak-session-exporter` a un `scrape_interval` de **15s** et un `scrape_timeout` de **10s** (les appels à l’API Admin peuvent être plus lents).
 
 ## Jobs
 
