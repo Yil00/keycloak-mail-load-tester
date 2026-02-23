@@ -8,7 +8,7 @@ Setup Keycloak avec Postgres et MailHog pour tester l’envoi de mails en masse.
 
 → Notes de release : [docs/Release.md](docs/Release.md)
 
-**Documentation monitoring** : [docs/grafana-dashboards.md](docs/grafana-dashboards.md) (dashboards, graphiques, légendes) · [docs/prometheus.md](docs/prometheus.md) (Prometheus, config, tutoriel PromQL).
+**Documentation monitoring** : [docs/grafana-dashboards.md](docs/grafana-dashboards.md) (dashboards, graphiques, légendes) · [docs/prometheus.md](docs/prometheus.md) (Prometheus, config, tutoriel PromQL). **Tests de charge Locust** (comptes distincts, UI + headless) : [docs/locust.md](docs/locust.md).
 
 ---
 
@@ -29,7 +29,7 @@ Variables principales : `KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_P
 | Commande | Description |
 |----------|-------------|
 | `make help` | Afficher la liste des cibles |
-| `make up` | Démarrer tous les services (Postgres, Keycloak, MailHog, Prometheus, Grafana) |
+| `make up` | Démarrer tous les services (Postgres, Keycloak, MailHog, Prometheus, Grafana, Locust) |
 | `make down` | Arrêter les conteneurs |
 | `make restart` | Redémarrer tous les services |
 | `make ps` | Afficher l’état des conteneurs |
@@ -45,10 +45,14 @@ Variables principales : `KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_P
 | `make load-test-ramp` | Test de charge (ramp, un compte) |
 | `make load-test-multi` | Test de charge multi-comptes (création users puis test) |
 | `make load-test-multi-ramp` | Idem en mode ramp |
+| `make create-locust-users` | Créer les comptes loadtest_user_1..N pour Locust (défaut 100) |
+| `make locust-headless USERS=10 SPAWN_RATE=5 RUN_TIME=30s` | Test Locust sans UI (stats dans le terminal) |
+| `make locust-trigger USERS=10 SPAWN_RATE=5 RUN_TIME=30` | Déclencher le test dans l'UI Locust (http://localhost:8089) |
 | `make create-superadmin SUPERADMIN_USER=... SUPERADMIN_PASSWORD=...` | Créer un utilisateur superadmin |
 | `make list-users` | Nombre d'utilisateurs par realm |
 | `make delete-test-users` | Supprimer les users de test (loadtest_* et testuser_*) uniquement |
 | `make delete-test-users DRY_RUN=1` | Idem en simulation (sans supprimer) |
+| `make keycloak-allow-http` | Autoriser HTTP (realm master) si « HTTPS required » |
 | `make clean` | Arrêter les conteneurs et supprimer les volumes |
 
 ---
@@ -133,7 +137,7 @@ Exemples :
 
 ### 4. Test de charge (connexions simultanées)
 
-Le script **`src/keycloak_load_test.py`** mesure la charge sur le endpoint d’authentification (obtention de token) : N connexions simultanées pendant D secondes.
+Le script **`src/keycloak_load_test.py`** mesure la charge sur le endpoint d’authentification (obtention de token) : N connexions simultanées pendant D secondes. **Locust** propose une autre approche avec **un compte distinct par utilisateur virtuel** (password grant + logout en fin de test), visible en temps réel dans Grafana ; voir [docs/locust.md](docs/locust.md) et `locust/README.md`.
 
 ```bash
 make load-test

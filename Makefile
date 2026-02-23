@@ -6,14 +6,14 @@ COMPOSE := docker compose
 # Exécuter un script Python dans keycloak-session-exporter (make up requis)
 EXEC_SCRIPTS := $(COMPOSE) exec -T keycloak-session-exporter
 
-.PHONY: help up down restart ps logs logs-keycloak logs-mailhog keycloak-allow-http install test test-nb test-rate test-batch load-test load-test-ramp load-test-multi load-test-multi-ramp create-superadmin list-users delete-test-users clean
+.PHONY: help up down restart ps logs logs-keycloak logs-mailhog keycloak-allow-http install test test-nb test-rate test-batch load-test load-test-ramp load-test-multi load-test-multi-ramp create-locust-users locust-headless locust-trigger create-superadmin list-users delete-test-users clean
 
 help:
 	@echo "Keycloak — cibles disponibles :"
 	@echo ""
 	@echo "  Docker"
 	@echo "  ──────"
-	@echo "  make up              Démarrer tous les services (Postgres, Keycloak, MailHog)"
+	@echo "  make up              Démarrer tous les services (Postgres, Keycloak, MailHog, Prometheus, Grafana, Locust)"
 	@echo "  make down            Arrêter et supprimer les conteneurs"
 	@echo "  make restart         Redémarrer tous les services"
 	@echo "  make ps              Afficher l’état des conteneurs"
@@ -24,27 +24,36 @@ help:
 	@echo "  make logs-keycloak   Suivre les logs Keycloak uniquement"
 	@echo "  make logs-mailhog    Suivre les logs MailHog uniquement"
 	@echo ""
-	@echo "  Install & tests (mails)"
-	@echo "  ─────────────────────"
-	@echo "  make install         (aucune action : les scripts tournent dans keycloak-session-exporter)"
-	@echo "  make test            Lancer le test d’envoi (100 mails, débit max)"
-	@echo "  make test-nb         Nombre personnalisé : make test-nb NB=500"
-	@echo "  make test-rate       Débit constant : make test-rate RATE=100 NB=1000"
-	@echo "  make test-batch      Lots + pause : make test-batch NB=5000 PAUSE=30"
+	@echo "  Tests mails (keycloak-session-exporter)"
+	@echo "  ──────────────────────────────────────"
+	@echo "  make install         (info : scripts dans keycloak-session-exporter, make up requis)"
+	@echo "  make test            Test d'envoi 100 mails (débit max)"
+	@echo "  make test-nb NB=500  Nombre personnalisé"
+	@echo "  make test-rate RATE=100 NB=1000  Débit constant"
+	@echo "  make test-batch NB=5000 PAUSE=30  Lots + pause"
 	@echo ""
-	@echo "  Tests de charge"
-	@echo "  ───────────────"
-	@echo "  make load-test       Test de charge (constant) : CONCURRENT=20 DURATION=60"
-	@echo "  make load-test-ramp  Test de charge (ramp) : montée/descente progressive"
-	@echo "  make load-test-multi Test multi-comptes : CREATE_USERS=50 CONCURRENT=20 DURATION=30"
-	@echo "  make load-test-multi-ramp  Idem ramp : CREATE_USERS=50 RAMP_USERS=30 RAMP_UP=60 RAMP_HOLD=30 RAMP_DOWN=60"
+	@echo "  Tests de charge (scripts Python)"
+	@echo "  ────────────────────────────────"
+	@echo "  make load-test CONCURRENT=20 DURATION=60  Constant, un compte"
+	@echo "  make load-test-ramp  Ramp (montée/descente)"
+	@echo "  make load-test-multi CREATE_USERS=50 CONCURRENT=20 DURATION=30  Multi-comptes"
+	@echo "  make load-test-multi-ramp  Idem en ramp"
+	@echo ""
+	@echo "  Locust (tests de charge, comptes distincts)"
+	@echo "  ────────────────────────────────────────"
+	@echo "  make create-locust-users     Créer loadtest_user_1..N (défaut 100, mot de passe testpass)"
+	@echo "  make locust-headless         Lancer Locust sans UI — stats dans le terminal"
+	@echo "  make locust-trigger          Déclencher le test dans l'UI — stats en direct (prérequis : make up)"
+	@echo "  → create-locust-users : LOCUST_USER_COUNT=50 KEYCLOAK_LOAD_PASSWORD=... REALM=master"
+	@echo "  → locust-headless    : USERS=10 SPAWN_RATE=5 RUN_TIME=30s"
+	@echo "  → locust-trigger     : USERS=10 SPAWN_RATE=5 RUN_TIME=30  (UI http://localhost:8089)"
+	@echo "  → Voir docs/locust.md et locust/README.md"
 	@echo ""
 	@echo "  Admin Keycloak (utilisateurs)"
 	@echo "  ─────────────────────────────"
-	@echo "  make create-superadmin     Créer un superadmin (SUPERADMIN_USER=, SUPERADMIN_PASSWORD=)"
+	@echo "  make create-superadmin SUPERADMIN_USER=... SUPERADMIN_PASSWORD=..."
 	@echo "  make list-users      Nombre d'utilisateurs par realm"
-	@echo "  make delete-test-users  Supprimer les users de test (loadtest_* et testuser_*)"
-	@echo "  make delete-test-users DRY_RUN=1  Idem en simulation (affiche sans supprimer)"
+	@echo "  make delete-test-users  Supprimer loadtest_* et testuser_* (DRY_RUN=1 pour simuler)"
 	@echo ""
 	@echo "  Keycloak & nettoyage"
 	@echo "  ───────────────────"
@@ -142,6 +151,36 @@ list-users:
 
 delete-test-users:
 	$(EXEC_SCRIPTS) -e REALM="$(REALM)" python src/keycloak_admin_utils.py delete-test-users $(if $(filter 1,$(DRY_RUN)),--dry-run) --realm "$(REALM)"
+
+# Comptes pour Locust (loadtest_user_1, loadtest_user_2, ...)
+LOCUST_USER_COUNT ?= 100
+KEYCLOAK_LOAD_PASSWORD ?= testpass
+
+create-locust-users:
+	$(EXEC_SCRIPTS) python src/keycloak_admin_utils.py create-loadtest-users --count $(LOCUST_USER_COUNT) --password "$(KEYCLOAK_LOAD_PASSWORD)" --realm "$(REALM)"
+
+# Locust en mode headless (sans interface web). Les stats s'affichent dans le terminal uniquement (pas dans l'UI 8089).
+# Ex. make locust-headless USERS=10 SPAWN_RATE=5 RUN_TIME=30s  ou  make locust-headless LOCUST_HEADLESS_RUN_TIME=2m
+LOCUST_HEADLESS_USERS ?= 10
+LOCUST_HEADLESS_SPAWN_RATE ?= 5
+LOCUST_HEADLESS_RUN_TIME ?= 1m
+
+locust-headless:
+	$(COMPOSE) run --rm locust -f /mnt/locust/locustfile.py --headless -H http://keycloak:8080 \
+	  --users $(or $(USERS),$(LOCUST_HEADLESS_USERS)) \
+	  --spawn-rate $(or $(SPAWN_RATE),$(LOCUST_HEADLESS_SPAWN_RATE)) \
+	  --run-time $(or $(RUN_TIME),$(LOCUST_HEADLESS_RUN_TIME))
+
+# Déclencher un test via l'API du conteneur Locust (UI). Les stats s'affichent en direct dans http://localhost:8089
+# Prérequis : docker compose up -d locust  puis ouvrir http://localhost:8089
+# Ex. make locust-trigger USERS=10 SPAWN_RATE=5 RUN_TIME=30  (RUN_TIME en secondes, optionnel)
+LOCUST_PORT ?= 8089
+locust-trigger:
+	@test -x locust/trigger_ui.sh || chmod +x locust/trigger_ui.sh
+	LOCUST_HOST="http://localhost:$(LOCUST_PORT)" ./locust/trigger_ui.sh \
+	  "$(or $(USERS),$(LOCUST_HEADLESS_USERS))" \
+	  "$(or $(SPAWN_RATE),$(LOCUST_HEADLESS_SPAWN_RATE))" \
+	  "$(RUN_TIME)"
 
 # ── Nettoyage ─────────────────────────────────────────────────────────────────
 clean:

@@ -57,7 +57,8 @@ services:
     volumes:
       - .:/app:ro
     environment:
-      KEYCLOAK_URL: http://host.docker.internal:${KEYCLOAK_PORT:-8080}
+      # Même réseau que Keycloak : utiliser le nom du service
+      KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-master}
       KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
@@ -113,6 +114,25 @@ services:
       - "${MAILHOG_SMTP_PORT:-1025}:1025"
       - "${MAILHOG_UI_PORT:-8025}:8025"
     command: ["-storage", "memory"]
+
+  locust:
+    image: locustio/locust
+    container_name: locust
+    volumes:
+      - ./locust:/mnt/locust
+    environment:
+      KEYCLOAK_HOST: keycloak
+      KEYCLOAK_PORT: ${KEYCLOAK_PORT:-8080}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-master}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-admin-cli}
+      KEYCLOAK_LOAD_USER_PREFIX: ${KEYCLOAK_LOAD_USER_PREFIX:-loadtest_user_}
+      KEYCLOAK_LOAD_PASSWORD: ${KEYCLOAK_LOAD_PASSWORD:-testpass}
+      KEYCLOAK_USER_COUNT: ${KEYCLOAK_USER_COUNT:-100}
+    command: -f /mnt/locust/locustfile.py
+    ports:
+      - "${LOCUST_PORT:-8089}:8089"
+    depends_on:
+      - keycloak
 
 volumes:
   postgres_data:

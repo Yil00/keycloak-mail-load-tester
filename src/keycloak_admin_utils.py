@@ -7,6 +7,7 @@ Usage :
   python keycloak_admin_utils.py create-superadmin --username superadmin --password secret
   python keycloak_admin_utils.py list-users
   python keycloak_admin_utils.py delete-test-users [--dry-run] [--realm master]
+  python keycloak_admin_utils.py create-loadtest-users --count 100 --password testpass   # pour Locust (loadtest_user_1..N)
 
 Variables d'environnement : KEYCLOAK_URL, KEYCLOAK_REALM, KEYCLOAK_ADMIN_USER, KEYCLOAK_ADMIN_PASSWORD.
 """
@@ -204,6 +205,81 @@ def create_superadmin(
     return True
 
 
+def create_user_with_password(
+    base_url: str,
+    realm: str,
+    token: str,
+    username: str,
+    password: str,
+    email: Optional[str] = None,
+) -> bool:
+    """Crée un utilisateur avec mot de passe (sans rôles spéciaux). Retourne True si créé ou déjà existant avec accès."""
+    r = requests.post(
+        f"{base_url}/admin/realms/{realm}/users",
+        json={
+            "username": username,
+            "enabled": True,
+            "emailVerified": True,
+            "email": email or f"{username}@test.local",
+        },
+        headers=auth_headers(token),
+        timeout=10,
+    )
+    if r.status_code == 409:
+        return True  # existe déjà, on suppose que le mot de passe est déjà bon ou à réinitialiser
+    if r.status_code != 201:
+        print(f"Échec création {username}: {r.status_code} {r.text[:150]}", file=sys.stderr)
+        return False
+
+    user_id = r.headers.get("Location", "").rstrip("/").split("/")[-1]
+    if not user_id:
+        r2 = requests.get(
+            f"{base_url}/admin/realms/{realm}/users",
+            params={"username": username},
+            headers=auth_headers(token),
+            timeout=10,
+        )
+        r2.raise_for_status()
+        users = r2.json()
+        if not users:
+            return False
+        user_id = users[0].get("id")
+
+    rp = requests.put(
+        f"{base_url}/admin/realms/{realm}/users/{user_id}/reset-password",
+        json={"type": "password", "temporary": False, "value": password},
+        headers=auth_headers(token),
+        timeout=10,
+    )
+    if rp.status_code not in (200, 204):
+        print(f"Échec mot de passe {username}: {rp.status_code}", file=sys.stderr)
+        return False
+    return True
+
+
+def create_loadtest_users(
+    base_url: str,
+    realm: str,
+    token: str,
+    count: int,
+    password: str,
+    prefix: str = "loadtest_user_",
+) -> Tuple[int, int]:
+    """
+    Crée count utilisateurs : prefix1, prefix2, ... prefixN avec le même mot de passe.
+    Retourne (créés, déjà_existants_ou_erreur).
+    """
+    created = 0
+    skipped = 0
+    for i in range(1, count + 1):
+        username = f"{prefix}{i}"
+        if create_user_with_password(base_url, realm, token, username, password):
+            created += 1
+        else:
+            skipped += 1
+    return created, skipped
+
+
 def get_users_in_realm(base_url: str, realm: str, token: str) -> List[dict]:
     out = []
     first = 0
@@ -295,6 +371,14 @@ def main() -> int:
     p_del.add_argument("--realm", default=DEFAULT_REALM, help="Realm à traiter (défaut: master)")
     p_del.add_argument("--url", default=DEFAULT_URL, help="URL Keycloak")
 
+    # create-loadtest-users (pour Locust : loadtest_user_1, loadtest_user_2, ...)
+    p_locust = sub.add_parser("create-loadtest-users", help="Créer N utilisateurs loadtest_user_1..N pour les tests Locust")
+    p_locust.add_argument("--count", type=int, default=100, metavar="N", help="Nombre d'utilisateurs (défaut: 100)")
+    p_locust.add_argument("--password", default="testpass", help="Mot de passe commun (défaut: testpass)")
+    p_locust.add_argument("--prefix", default="loadtest_user_", help="Préfixe du username (défaut: loadtest_user_)")
+    p_locust.add_argument("--realm", default=DEFAULT_REALM, help="Realm (défaut: master)")
+    p_locust.add_argument("--url", default=DEFAULT_URL, help="URL Keycloak")
+
     args = parser.parse_args()
     base_url = getattr(args, "url", DEFAULT_URL).rstrip("/")
     admin_user = os.environ.get("KEYCLOAK_ADMIN_USER", DEFAULT_ADMIN)
@@ -327,6 +411,16 @@ def main() -> int:
         deleted, skipped = delete_test_users(base_url, realm, token, dry_run=dry_run)
         print(f"Résultat : {deleted} utilisateur(s) {'à supprimer' if dry_run else 'supprimé(s)'}, {skipped} ignoré(s)/protégé(s).")
         return 0
+
+    if args.command == "create-loadtest-users":
+        realm = getattr(args, "realm", DEFAULT_REALM)
+        count = getattr(args, "count", 100)
+        password = getattr(args, "password", "testpass")
+        prefix = getattr(args, "prefix", "loadtest_user_")
+        print(f"Création de {count} utilisateurs {prefix}1..{prefix}{count} (realm={realm})...")
+        created, skipped = create_loadtest_users(base_url, realm, token, count, password, prefix=prefix)
+        print(f"Résultat : {created} créé(s) ou déjà existant(s), {skipped} échec(s). Utilisez ces comptes avec Locust (KEYCLOAK_LOAD_USER_PREFIX={prefix}, KEYCLOAK_USER_COUNT={count}, KEYCLOAK_LOAD_PASSWORD=...).")
+        return 0 if skipped == 0 else 1
 
     return 0
 
